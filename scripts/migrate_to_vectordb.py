@@ -169,9 +169,15 @@ def migrate_documents(
                 file_to_vector_ids[source_file] = []
             file_to_vector_ids[source_file].append((vector_id, content_hash))
 
-        # Upsert to Turbopuffer
+        # Upsert to Turbopuffer with schema for full-text search
         print(f"Upserting batch to Turbopuffer...")
-        ns.upsert(vectors)
+        ns.upsert(
+            vectors,
+            distance_metric='cosine_distance',
+            schema={
+                'text': {'type': 'string', 'full_text_search': True}
+            }
+        )
 
     print(f"\n✓ Successfully migrated {len(all_chunks)} chunks to Turbopuffer namespace '{namespace}'")
     return file_to_vector_ids
