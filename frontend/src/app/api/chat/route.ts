@@ -7,7 +7,7 @@ import { hoaDocMetadata } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 
 const RAG_TOP_K = 3;
-const FUSION_ALPHA = 0.5; // Weight for vector search (0-1), BM25 weight is (1 - alpha)
+const FUSION_ALPHA = 1.0; // Weight for vector search (0-1), BM25 weight is (1 - alpha)
 
 interface RankedResult {
   id: string;
@@ -22,17 +22,15 @@ function weightedFusion(
   const scores: { [key: string]: number } = {};
 
   const normalize = (arr: any[]) => {
-    const scores = arr.map((r) => r.dist ?? 0);
+    const scores = arr.map((r) => r.$dist ?? 0);
     console.log("Scores before normalization:", scores);
     const max = Math.max(...scores);
-    const min = Math.min(...scores);
-    const range = max - min || 1; // Avoid division by zero
 
-    console.log("Range:", range);
+    console.log("Max:", max);
 
     return arr.map((r) => ({
       id: r.id,
-      score: ((r.dist ?? 0) - min) / range
+      score: max > 0 ? (r.$dist ?? 0) / max : 0
     }));
   };
 

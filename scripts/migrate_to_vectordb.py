@@ -104,6 +104,7 @@ def migrate_documents(
     namespace: str,
     openai_api_key: str,
     turbopuffer_api_key: str,
+    turbopuffer_region: str = "gcp-us-central1",
     batch_size: int = 100
 ) -> Dict[str, List[Tuple[str, str]]]:
     """
@@ -112,8 +113,11 @@ def migrate_documents(
     """
     # Initialize clients
     openai_client = OpenAI(api_key=openai_api_key)
-    tpuf.api_key = turbopuffer_api_key
-    ns = tpuf.Namespace(namespace)
+    tpuf_client = tpuf.Turbopuffer(
+        api_key=turbopuffer_api_key,
+        region=turbopuffer_region
+    )
+    ns = tpuf_client.namespace(namespace)
 
     all_chunks = []
 
@@ -146,21 +150,22 @@ def migrate_documents(
         embeddings = embed_texts(batch_texts, openai_client)
 
         # Prepare data for Turbopuffer
-        vectors = []
+        upsert_rows = []
         for j, (chunk, embedding) in enumerate(zip(batch, embeddings)):
-            vector_id = f"{chunk['metadata']['source']}_{i+j}"
+            # Create a short hash-based ID to stay under 64 bytes
+            # Use hash of source path + chunk index for uniqueness
+            source_hash = hashlib.sha256(chunk['metadata']['source'].encode('utf-8')).hexdigest()[:16]
+            vector_id = f"{source_hash}_{i+j}"
             content_hash = compute_content_hash(chunk['text'])
 
-            vectors.append({
+            upsert_rows.append({
                 'id': vector_id,
                 'vector': embedding,
-                'attributes': {
-                    'text': chunk['text'],
-                    'content_hash': content_hash,
-                    'source': chunk['metadata']['source'],
-                    'header': chunk['metadata']['header'] or '',
-                    'level': chunk['metadata']['level']
-                }
+                'text': chunk['text'],
+                'content_hash': content_hash,
+                'source': chunk['metadata']['source'],
+                'header': chunk['metadata']['header'] or '',
+                'level': chunk['metadata']['level']
             })
 
             # Track vector IDs and content hashes by file
@@ -171,8 +176,8 @@ def migrate_documents(
 
         # Upsert to Turbopuffer with schema for full-text search
         print(f"Upserting batch to Turbopuffer...")
-        ns.upsert(
-            vectors,
+        ns.write(
+            upsert_rows=upsert_rows,
             distance_metric='cosine_distance',
             schema={
                 'text': {'type': 'string', 'full_text_search': True}
@@ -220,6 +225,11 @@ def main():
         default=os.getenv('TURBOPUFFER_API_KEY'),
         help='Turbopuffer API key (or set TURBOPUFFER_API_KEY in frontend/.env.local)'
     )
+    parser.add_argument(
+        '--turbopuffer-region',
+        default=os.getenv('TURBOPUFFER_REGION', 'gcp-us-central1'),
+        help='Turbopuffer region (default: gcp-us-central1)'
+    )
 
     args = parser.parse_args()
 
@@ -236,6 +246,7 @@ def main():
         namespace=args.namespace,
         openai_api_key=args.openai_api_key,
         turbopuffer_api_key=args.turbopuffer_api_key,
+        turbopuffer_region=args.turbopuffer_region,
         batch_size=args.batch_size
     )
 

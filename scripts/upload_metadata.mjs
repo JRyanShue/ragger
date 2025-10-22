@@ -5,20 +5,11 @@
  */
 
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
 
-// Import schema from frontend
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Dynamic import of the schema
-const schemaPath = resolve(__dirname, '../frontend/src/db/schema.ts');
-
-// For now, we'll define the table inline since importing TS from .mjs is complex
-// In production, you'd want to build this properly
+// Define the table inline since importing TS from .mjs is complex
 const { pgTable, text, timestamp, integer } = await import('drizzle-orm/pg-core');
 
 const hoaDocMetadata = pgTable('hoa_doc_metadata', {
@@ -71,8 +62,20 @@ async function main() {
         filePath: record.file_path,
       }));
 
-      await db.insert(hoaDocMetadata).values(values);
-      console.log(`Inserted batch ${Math.floor(i / batchSize) + 1} (${values.length} records)`);
+      await db.insert(hoaDocMetadata)
+        .values(values)
+        .onConflictDoUpdate({
+          target: hoaDocMetadata.id,
+          set: {
+            vectorId: sql`excluded.vector_id`,
+            contentHash: sql`excluded.content_hash`,
+            communitySlug: sql`excluded.community_slug`,
+            type: sql`excluded.type`,
+            title: sql`excluded.title`,
+            filePath: sql`excluded.file_path`,
+          }
+        });
+      console.log(`Upserted batch ${Math.floor(i / batchSize) + 1} (${values.length} records)`);
     }
 
     console.log(`✓ Successfully uploaded ${metadataRecords.length} metadata records to Supabase`);
