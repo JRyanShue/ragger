@@ -88,8 +88,19 @@ export default function ChatPage() {
         createdAt: new Date(userMessage.createdAt),
       }]);
 
-      // Simulate AI response (replace with actual AI API call)
-      const aiResponse = "This is a simulated response. Connect your AI backend here.";
+      // Call backend API to generate AI response with conversation context
+      const chatMessages = [
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user" as const, content: userMessageContent },
+      ];
+
+      const aiRes = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: chatMessages }),
+      });
+      if (!aiRes.ok) throw new Error('AI backend error');
+      const { text: aiResponse } = await aiRes.json();
 
       // Save assistant message to database
       const assistantMsgRes = await fetch('/api/messages', {
